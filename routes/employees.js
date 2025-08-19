@@ -5,7 +5,7 @@ const router = express.Router();
 
 router.post("/", async (req, res) => {
   try {
-    const { name, email, department, joiningDate } = req.body;
+    const { name, email, department, joiningDate, password } = req.body;
 
     const existingEmployee = await Employee.findOne({ email });
     if (existingEmployee) {
@@ -20,6 +20,7 @@ router.post("/", async (req, res) => {
       email,
       department,
       joiningDate,
+      password
     });
 
     await employee.save();
