@@ -22,7 +22,13 @@ router.post("/", authenticateToken, async (req, res) => {
       });
     }
 
-    const employee = req.user;
+    const employee = await Employee.findById(employeeId);
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: "Employee not found",
+      });
+    }
 
     if (!isValidDateRange(startDate, endDate)) {
       return res.status(400).json({
@@ -80,7 +86,7 @@ router.post("/", authenticateToken, async (req, res) => {
     });
 
     await leave.save();
-    await leave.populate("employeeId", "name email department");
+    await leave.populate("employeeId", "name email department leaveBalance");
 
     res.status(201).json({
       success: true,
@@ -94,9 +100,11 @@ router.post("/", authenticateToken, async (req, res) => {
         reason: leave.reason,
         status: leave.status,
         appliedAt: leave.createdAt,
+        currentBalance: leave.employeeId.leaveBalance,
       },
     });
   } catch (error) {
+    console.error("Leave application error:", error);
     res.status(400).json({
       success: false,
       message: error.message || "Failed to submit leave request",
@@ -109,21 +117,29 @@ router.patch(
   authenticateToken,
   authorize("HR", "Admin"),
   async (req, res) => {
+    const session = await mongoose.startSession();
+
     try {
+      await session.startTransaction();
+
       const { leaveId } = req.params;
       const { status, reviewComments } = req.body;
       const reviewerId = req.user._id;
 
       if (!["approved", "rejected"].includes(status)) {
+        await session.abortTransaction();
         return res.status(400).json({
           success: false,
           message: 'Status must be either "approved" or "rejected"',
         });
       }
 
-      const leave = await Leave.findById(leaveId).populate("employeeId");
+      const leave = await Leave.findById(leaveId)
+        .populate("employeeId")
+        .session(session);
 
       if (!leave) {
+        await session.abortTransaction();
         return res.status(404).json({
           success: false,
           message: "Leave request not found",
@@ -131,6 +147,7 @@ router.patch(
       }
 
       if (reviewerId.toString() === leave.employeeId._id.toString()) {
+        await session.abortTransaction();
         return res.status(400).json({
           success: false,
           message: "Employees cannot approve their own leave requests",
@@ -138,6 +155,7 @@ router.patch(
       }
 
       if (leave.status !== "pending") {
+        await session.abortTransaction();
         return res.status(400).json({
           success: false,
           message: `Leave request is already ${leave.status}`,
@@ -149,13 +167,36 @@ router.patch(
       leave.reviewedAt = new Date();
       leave.reviewComments = reviewComments || "";
 
+      let updatedEmployee = leave.employeeId;
+
       if (status === "approved") {
-        const employee = leave.employeeId;
-        employee.leaveBalance -= leave.daysRequested;
-        await employee.save();
+        updatedEmployee = await Employee.findOneAndUpdate(
+          {
+            _id: leave.employeeId._id,
+            leaveBalance: { $gte: leave.daysRequested },
+          },
+          {
+            $inc: { leaveBalance: -leave.daysRequested },
+          },
+          {
+            new: true,
+            session: session,
+          }
+        );
+
+        if (!updatedEmployee) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient leave balance. Employee may have used leaves in another request.`,
+          });
+        }
       }
 
-      await leave.save();
+      await leave.save({ session });
+      await session.commitTransaction();
+
+      await leave.populate("employeeId", "name email department leaveBalance");
 
       res.json({
         success: true,
@@ -168,26 +209,34 @@ router.patch(
           reviewedAt: leave.reviewedAt,
           reviewComments: leave.reviewComments,
           remainingBalance:
-            status === "approved" ? leave.employeeId.leaveBalance : "unchanged",
+            status === "approved"
+              ? updatedEmployee.leaveBalance
+              : leave.employeeId.leaveBalance,
         },
       });
     } catch (error) {
+      await session.abortTransaction();
+      console.error("Leave approval error:", error);
       res.status(400).json({
         success: false,
         message: error.message || "Failed to update leave request",
       });
+    } finally {
+      await session.endSession();
     }
   }
 );
 
 router.get("/", authenticateToken, async (req, res) => {
   try {
-    const { status, page = 1, limit = 10 } = req.query;
+    const { status, page = 1, limit = 10, employeeId } = req.query;
 
     let filter = {};
 
     if (req.user.role === "Employee") {
       filter.employeeId = req.user._id;
+    } else if (employeeId) {
+      filter.employeeId = employeeId;
     }
 
     if (status) filter.status = status;
@@ -195,7 +244,7 @@ router.get("/", authenticateToken, async (req, res) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const leaves = await Leave.find(filter)
-      .populate("employeeId", "name email department")
+      .populate("employeeId", "name email department leaveBalance")
       .populate("reviewedBy", "name email")
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -214,6 +263,7 @@ router.get("/", authenticateToken, async (req, res) => {
       },
     });
   } catch (error) {
+    console.error("Fetch leaves error:", error);
     res.status(500).json({
       success: false,
       message: error.message || "Failed to fetch leave requests",
@@ -224,7 +274,7 @@ router.get("/", authenticateToken, async (req, res) => {
 router.get("/:leaveId", authenticateToken, async (req, res) => {
   try {
     const leave = await Leave.findById(req.params.leaveId)
-      .populate("employeeId", "name email department")
+      .populate("employeeId", "name email department leaveBalance")
       .populate("reviewedBy", "name email");
 
     if (!leave) {
@@ -249,6 +299,7 @@ router.get("/:leaveId", authenticateToken, async (req, res) => {
       data: leave,
     });
   } catch (error) {
+    console.error("Fetch single leave error:", error);
     res.status(500).json({
       success: false,
       message: error.message || "Failed to fetch leave request",
