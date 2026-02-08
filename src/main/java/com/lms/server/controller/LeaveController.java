@@ -2,13 +2,13 @@ package com.lms.server.controller;
 
 import com.lms.server.dto.ApplyLeaveRequest;
 import com.lms.server.dto.LeaveResponse;
-import com.lms.server.security.CustomUserDetails;
+import com.lms.server.dto.ReviewLeaveRequest;
+import com.lms.server.entity.Employee;
 import com.lms.server.service.LeaveService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import com.lms.server.dto.ReviewLeaveRequest;
-import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.List;
 import java.util.UUID;
@@ -21,34 +21,30 @@ public class LeaveController {
     private final LeaveService leaveService;
 
     @PostMapping
+    @PreAuthorize("hasRole('Employee') or hasRole('HR') or hasRole('Admin')")
     public LeaveResponse applyLeave(
-            @RequestBody ApplyLeaveRequest request,
-            Authentication authentication
+            Authentication auth,
+            @RequestBody ApplyLeaveRequest request
     ) {
-        CustomUserDetails user =
-                (CustomUserDetails) authentication.getPrincipal();
-
-        return leaveService.applyLeave(user.getId(), request);
+        Employee employee = (Employee) auth.getPrincipal();
+        return leaveService.applyLeave(employee.getId(), request);
     }
 
     @GetMapping("/my")
-    public List<LeaveResponse> myLeaves(Authentication authentication) {
-        CustomUserDetails user =
-                (CustomUserDetails) authentication.getPrincipal();
-
-        return leaveService.getMyLeaves(user.getId());
+    @PreAuthorize("hasRole('Employee') or hasRole('HR') or hasRole('Admin')")
+    public List<LeaveResponse> getMyLeaves(Authentication auth) {
+        Employee employee = (Employee) auth.getPrincipal();
+        return leaveService.getMyLeaves(employee.getId());
     }
 
     @PatchMapping("/{leaveId}/review")
     @PreAuthorize("hasRole('HR') or hasRole('Admin')")
     public LeaveResponse reviewLeave(
+            Authentication auth,
             @PathVariable UUID leaveId,
-            @RequestBody ReviewLeaveRequest request,
-            Authentication authentication
+            @RequestBody ReviewLeaveRequest request
     ) {
-        CustomUserDetails reviewer =
-                (CustomUserDetails) authentication.getPrincipal();
-
+        Employee reviewer = (Employee) auth.getPrincipal();
         return leaveService.reviewLeave(
                 reviewer.getId(),
                 leaveId,

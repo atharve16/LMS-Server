@@ -4,7 +4,6 @@ import com.lms.server.dto.EmployeeResponse;
 import com.lms.server.dto.LeaveBalanceResponse;
 import com.lms.server.dto.LeaveResponse;
 import com.lms.server.entity.Employee;
-import com.lms.server.entity.Leave;
 import com.lms.server.repository.EmployeeRepository;
 import com.lms.server.repository.LeaveRepository;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +24,7 @@ public class EmployeeService {
     public List<EmployeeResponse> getAllEmployees() {
         return employeeRepository.findAll()
                 .stream()
-                .filter(Employee::getIsActive)
+                .filter(e -> Boolean.TRUE.equals(e.getIsActive()))
                 .map(this::mapToResponse)
                 .toList();
     }
@@ -38,8 +37,23 @@ public class EmployeeService {
 
     public EmployeeResponse addEmployee(Employee employee) {
         employee.setPassword(passwordEncoder.encode(employee.getPassword()));
+
+        // 🔴 REQUIRED DEFAULTS
+        if (employee.getIsActive() == null) {
+            employee.setIsActive(true);
+        }
+        if (employee.getLeaveBalance() == null) {
+            employee.setLeaveBalance(20);
+        }
+
         employeeRepository.save(employee);
         return mapToResponse(employee);
+    }
+
+    public LeaveBalanceResponse getLeaveBalanceByEmail(String email) {
+        Employee employee = employeeRepository.findByEmail(email)
+                .orElseThrow();
+        return getLeaveBalance(employee.getId());
     }
 
     public LeaveBalanceResponse getLeaveBalance(UUID employeeId) {
@@ -75,14 +89,14 @@ public class EmployeeService {
     }
 
     private EmployeeResponse mapToResponse(Employee e) {
-        return new EmployeeResponse(
-                e.getId(),
-                e.getName(),
-                e.getEmail(),
-                e.getDepartment(),
-                e.getRole(),
-                e.getJoiningDate(),
-                e.getLeaveBalance()
-        );
+        return EmployeeResponse.builder()
+                .employeeId(e.getId())
+                .name(e.getName())
+                .email(e.getEmail())
+                .department(e.getDepartment())
+                .joiningDate(e.getJoiningDate())
+                .role(e.getRole())
+                .leaveBalance(e.getLeaveBalance())
+                .build();
     }
 }

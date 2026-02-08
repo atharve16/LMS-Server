@@ -8,8 +8,10 @@ import com.lms.server.repository.EmployeeRepository;
 import com.lms.server.repository.LeaveRepository;
 import com.lms.server.util.DateUtil;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.UUID;
@@ -44,13 +46,16 @@ public class LeaveService {
         boolean overlapExists =
                 leaveRepository.existsByEmployeeIdAndStatusInAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
                         employeeId,
-                        List.of("pending", "approved"),
+                        List.of("PENDING", "APPROVED"),
                         request.endDate(),
                         request.startDate()
                 );
 
         if (overlapExists) {
-            throw new RuntimeException("Leave overlaps with existing leave");
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Leave overlaps with existing leave"
+            );
         }
 
         Leave leave = Leave.builder()
@@ -58,7 +63,7 @@ public class LeaveService {
                 .startDate(request.startDate())
                 .endDate(request.endDate())
                 .reason(request.reason())
-                .status("pending")
+                .status("PENDING")
                 .daysRequested(daysRequested)
                 .build();
 
@@ -96,14 +101,14 @@ public class LeaveService {
             String comments
     ) {
 
-        if (!status.equals("approved") && !status.equals("rejected")) {
-            throw new RuntimeException("Status must be approved or rejected");
+        if (!status.equals("APPROVED") && !status.equals("REJECTED")) {
+            throw new RuntimeException("Status must be APPROVED or REJECTED");
         }
 
         Leave leave = leaveRepository.findById(leaveId)
                 .orElseThrow(() -> new RuntimeException("Leave not found"));
 
-        if (!leave.getStatus().equals("pending")) {
+        if (!leave.getStatus().equals("PENDING")) {
             throw new RuntimeException("Leave already reviewed");
         }
 
@@ -120,7 +125,7 @@ public class LeaveService {
         leave.setReviewedAt(java.time.LocalDateTime.now());
         leave.setReviewComments(comments);
 
-        if (status.equals("approved")) {
+        if (status.equals("APPROVED")) {
 
             if (employee.getLeaveBalance() < leave.getDaysRequested()) {
                 throw new RuntimeException("Insufficient leave balance");

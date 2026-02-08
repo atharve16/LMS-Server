@@ -9,7 +9,6 @@ import java.util.UUID;
 
 public class JwtUtil {
 
-    // ⚠️ Later move this to env variable
     private static final String SECRET =
             "this-is-a-very-secure-secret-key-for-lms-project-12345";
 

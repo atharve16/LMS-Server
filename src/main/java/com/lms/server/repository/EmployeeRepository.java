@@ -10,7 +10,6 @@ import java.util.UUID;
 
 public interface EmployeeRepository extends JpaRepository<Employee, UUID> {
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<Employee> findById(UUID id);
 
     Optional<Employee> findByEmail(String email);

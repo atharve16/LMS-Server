@@ -29,6 +29,7 @@ public class AuthService {
                 .role(request.role() == null ? "Employee" : request.role())
                 .joiningDate(request.joiningDate())
                 .leaveBalance(20)
+                .isActive(true)
                 .build();
 
         employeeRepository.save(employee);

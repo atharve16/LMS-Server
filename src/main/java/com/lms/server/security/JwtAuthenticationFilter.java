@@ -26,7 +26,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
-
         return path.startsWith("/api/auth")
                 || request.getMethod().equals("OPTIONS");
     }
@@ -38,36 +37,47 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             FilterChain filterChain
     ) throws ServletException, IOException {
 
-        String authHeader = request.getHeader("Authorization");
+        // 🔥 ADD THESE 3 LINES RIGHT HERE
+        System.out.println("==== REQUEST DEBUG ====");
+        System.out.println("Method: " + request.getMethod());
+        System.out.println("Path: " + request.getRequestURI());
+        System.out.println("Authorization Header: " + request.getHeader("Authorization"));
+
+        final String authHeader = request.getHeader("Authorization");
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
         }
 
+        String token = authHeader.substring(7);
+
         try {
-            String token = authHeader.substring(7);
             UUID employeeId = JwtUtil.validateAndGetEmployeeId(token);
 
-            Employee employee = employeeRepository.findById(employeeId)
-                    .orElseThrow();
+            if (SecurityContextHolder.getContext().getAuthentication() == null) {
 
-            CustomUserDetails userDetails = new CustomUserDetails(employee);
+                Employee employee = employeeRepository.findById(employeeId)
+                        .orElseThrow(() -> new RuntimeException("Employee not found"));
 
-            UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(
-                            userDetails,
-                            null,
-                            userDetails.getAuthorities()
-                    );
+                UsernamePasswordAuthenticationToken authToken =
+                        new UsernamePasswordAuthenticationToken(
+                                employee,
+                                null,
+                                employee.getAuthorities()
+                        );
 
-            authentication.setDetails(
-                    new WebAuthenticationDetailsSource().buildDetails(request)
-            );
+                authToken.setDetails(
+                        new WebAuthenticationDetailsSource()
+                                .buildDetails(request)
+                );
 
-            SecurityContextHolder.getContext().setAuthentication(authentication);
+                SecurityContextHolder.getContext()
+                        .setAuthentication(authToken);
+            }
 
-        } catch (Exception e) {
+        } catch (Exception ex) {
+            ex.printStackTrace();   // 👈 ALSO ADD THIS
             SecurityContextHolder.clearContext();
         }
 
